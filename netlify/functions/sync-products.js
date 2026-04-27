@@ -7,7 +7,6 @@ const { getGoogleAccessToken, withRetry } = require('../../src/sheets/client');
 const { getActiveCount }         = require('../../src/shopify/getActiveCount');
 const { activateProduct }        = require('../../src/shopify/activateProduct');
 const { getPreviousActiveCount } = require('../../src/sheets/getConfig');
-const { setPreviousActiveCount } = require('../../src/sheets/updateConfig');
 const { getListedProducts }      = require('../../src/sheets/getListedProducts');
 const { markProductActive }      = require('../../src/sheets/updateProductStatus');
 
@@ -91,16 +90,9 @@ exports.handler = async function (event) {
 
     log.info(`Activated ${activated} product(s) this run`);
 
-    // 6. Fetch updated count and persist to Config Sheet!E2
-    const newActiveCount = await withRetry(() => getActiveCount(), 'getActiveCount final');
-    log.info(`New active count: ${newActiveCount}`);
-
-    await withRetry(() => setPreviousActiveCount(gToken, newActiveCount), 'setPreviousActiveCount');
-    log.info(`Config Sheet!E2 updated to ${newActiveCount}`);
-
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'ok', activated, newActiveCount, ignoreCap, activateAll, customAmount }),
+      body: JSON.stringify({ status: 'ok', activated, ignoreCap, activateAll, customAmount }),
     };
 
   } catch (err) {

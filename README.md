@@ -6,15 +6,23 @@ A scheduled Netlify function that drip-releases Shopify draft products to active
 
 ## How it works
 
+Two functions run back-to-back each day:
+
+**17:00 UTC — `refresh-count`**
 1. Fetches the current number of active products from Shopify.
-2. Compares that with yesterday's count stored in `Config Sheet!E2`.
-3. If the difference already meets or exceeds `MAX_DAILY_ACTIVATE`, it exits — nothing more to do today.
+2. Writes that count to `Config Sheet!E2` as the baseline for today's cap.
+
+**18:00 UTC — `sync-products`**
+1. Reads the baseline count from `Config Sheet!E2`.
+2. Fetches the current active count from Shopify and computes the delta.
+3. If the delta already meets or exceeds `MAX_DAILY_ACTIVATE`, it exits — nothing more to do today.
 4. Otherwise it reads all rows in `Store Sheet` where column G is `LISTED`.
 5. For each of those rows (up to the remaining daily allowance):
    - Sets the product to `active` on Shopify via the Admin API.
    - Updates column G to `ACTIVE` in the sheet.
-6. Writes the new active product count back to `Config Sheet!E2`.
-7. Runs again tomorrow at 18:00.
+6. Runs again tomorrow.
+
+Because `Config Sheet!E2` is only updated by `refresh-count` (once per day), any manual re-trigger of `sync-products` later the same day will correctly see the full day's delta and enforce the cap.
 
 ---
 
@@ -82,7 +90,9 @@ Copy `.env.example` to `.env` and fill in all values for local testing.
 2. Add all environment variables under **Site configuration → Environment variables**.
 3. Deploy — Netlify will automatically pick up the cron schedule from `netlify.toml`.
 
-The function runs daily at 16:00 UTC, which is **18:00 CEST** (summer) and **17:00 CET** (winter).
+Two functions run each day:
+- `refresh-count` at 17:00 UTC (**19:00 CEST** / **18:00 CET**) — snapshots the baseline count
+- `sync-products` at 18:00 UTC (**20:00 CEST** / **19:00 CET**) — activates products
 
 ---
 
@@ -147,6 +157,7 @@ index.html            Web UI — manual trigger and status dashboard
 
 netlify/functions/
   sync-products.js      Production handler — runs on schedule and via UI
+  refresh-count.js      Snapshots Shopify active count to Config Sheet!E2 (runs 1h before sync)
   test-sync.js          Read-only diagnostic endpoint
 
 src/

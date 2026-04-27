@@ -42,6 +42,7 @@ index.html              Web UI — status dashboard + manual trigger buttons
 
 netlify/functions/
   sync-products.js        Scheduled handler — full production run; accepts ignoreCap via POST body
+  refresh-count.js        Scheduled at 17:00 UTC — snapshots Shopify active count to Config Sheet!E2
   test-sync.js            Read-only diagnostic — zero writes
 
 src/
@@ -75,7 +76,7 @@ Data rows start at **row 4** (rows 1–3 are headers/blank). All column indices 
 
 STATUS values relevant to Ignite:
 - `LISTED` — product exists on Shopify as a draft; ready to activate
-- `ACTIVE` — product has been activated by Daybreak
+- `ACTIVE` — product has been activated by Ignite
 
 SHOPIFY LINK format (written by `product_lister2`):
 ```
@@ -87,7 +88,7 @@ https://admin.shopify.com/store/{storeName}/products/{numericId}
 | Cell | Purpose | Notes |
 |------|---------|-------|
 | D2 | Run lock | Used by `product_lister2` — **do not touch** |
-| E2 | Previous day's active count | Read at start of run, written at end |
+| E2 | Previous day's active count | Written by `refresh-count` at 17:00 UTC; read by `sync-products` at 18:00 UTC |
 
 **First-run requirement:** manually write `0` into `Config Sheet!E2` before the first deploy. If left empty, `getPreviousActiveCount` defaults to 0, which means `currentActive - 0` will likely exceed `MAX_DAILY_ACTIVATE` on a store with existing products, causing an early exit.
 
@@ -135,26 +136,42 @@ This converts the stored literal `\n` sequences back into real newlines for the 
 
 ```
 1. Validate env vars
-2. Parse POST body → ignoreCap (boolean, default false)
+2. Parse POST body → ignoreCap, activateAll, customAmount
 3. getActiveCount()                    → currentActive  (Shopify, paginated)
 4. getGoogleAccessToken()             → gToken          (RS256 JWT, 1h TTL)
 5. getPreviousActiveCount(gToken)     → previousActive  (Config Sheet!E2)
 6. dailyDelta = currentActive - previousActive
-   if !ignoreCap && dailyDelta >= MAX_DAILY_ACTIVATE → exit 200 "cap_reached"
-7. remaining = ignoreCap ? MAX_DAILY_ACTIVATE : MAX_DAILY_ACTIVATE - dailyDelta
+   overrideMode = ignoreCap || activateAll || customAmount !== null
+   if !overrideMode && dailyDelta >= MAX_DAILY_ACTIVATE → exit 200 "cap_reached"
+7. remaining = customAmount ?? (ignoreCap ? MAX_DAILY_ACTIVATE : MAX_DAILY_ACTIVATE - dailyDelta)
 8. getListedProducts(gToken)          → listedRows
    if listedRows.length === 0         → exit 200 "nothing_to_activate" (no writes)
-9. for row of listedRows.slice(0, remaining):
+9. toActivate = activateAll ? listedRows : listedRows.slice(0, remaining)
+   for row of toActivate:
      productId = extractProductId(row.productUrl)
      if !productId → log error, skip row
      activateProduct(productId)        (Shopify PUT, withRetry)
      markProductActive(gToken, rowNum) (Sheet col G → ACTIVE, withRetry)
-10. getActiveCount()                    → newActiveCount
-11. setPreviousActiveCount(gToken, newActiveCount)  (Config Sheet!E2)
-12. return 200 { activated, newActiveCount, ignoreCap }
+10. return 200 { activated, ignoreCap, activateAll, customAmount }
 ```
 
+E2 is **not written** by `sync-products`. The count snapshot is handled exclusively by `refresh-count` (see below).
+
 `ignoreCap: true` is sent via POST body by the web UI's "Override Cap & Run" button. The scheduled cron never sets it — it always runs with the cap enforced.
+
+## `refresh-count` logic (`netlify/functions/refresh-count.js`)
+
+Runs at 17:00 UTC (1h before `sync-products`). No activation logic — only snapshots the baseline.
+
+```
+1. Validate env vars
+2. getActiveCount()                    → activeCount  (Shopify, paginated)
+3. getGoogleAccessToken()             → gToken
+4. setPreviousActiveCount(gToken, activeCount)  (Config Sheet!E2)
+5. return 200 { activeCount }
+```
+
+Daily flow: 17:00 UTC — E2 written → 18:00 UTC — sync-products reads E2, activates products, E2 unchanged for the rest of the day. Any manual re-trigger after 18:00 sees the full day's delta in E2, so the cap is enforced correctly.
 
 If `activateProduct` or `markProductActive` throws after retries, the row stays `LISTED` and will be retried on the next daily run. The Shopify PUT is idempotent — activating an already-active product returns 200 with no side effects.
 
@@ -286,12 +303,14 @@ Body: { range: "Store Sheet!G5", majorDimension: "ROWS", values: [["ACTIVE"]] }
 
 ## Scheduling
 
-`netlify.toml` sets `schedule = "0 16 * * *"` on `sync-products`.
+Two scheduled functions in `netlify.toml`:
 
-- Netlify cron runs in UTC only (no timezone support)
-- `0 16 * * *` = 16:00 UTC = **18:00 CEST** (UTC+2, last Sunday of March → last Sunday of October)
-- = **17:00 CET** (UTC+1, the rest of the year)
-- To fix this to exactly 18:00 year-round, the cron would need to be updated seasonally
+| Function | Cron | UTC | CEST | CET |
+|---|---|---|---|---|
+| `refresh-count` | `0 17 * * *` | 17:00 | 19:00 | 18:00 |
+| `sync-products` | `0 18 * * *` | 18:00 | 20:00 | 19:00 |
+
+`refresh-count` always runs 1 hour before `sync-products` to ensure E2 is up to date before the activation run reads it. Netlify cron runs in UTC only — no timezone support.
 
 ## Important constraints and gotchas
 

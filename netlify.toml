@@ -5,9 +5,14 @@
 [functions]
   node_bundler = "esbuild"
 
-# 16:00 UTC = 18:00 CEST (UTC+2, summer) / 17:00 CET (UTC+1, winter)
+# 17:00 UTC = 19:00 CEST / 18:00 CET — snapshots E2 before the activation run
+[functions."refresh-count"]
+  schedule = "0 17 * * *"
+  timeout  = 30
+
+# 18:00 UTC = 20:00 CEST / 19:00 CET — runs 1h after refresh-count
 [functions."sync-products"]
-  schedule = "0 16 * * *"
+  schedule = "0 18 * * *"
   timeout  = 60
 
 [functions."test-sync"]

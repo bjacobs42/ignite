@@ -23,6 +23,10 @@ exports.handler = async function () {
     return { statusCode: 500, body: 'config error: Google vars missing' };
   }
 
+  const body      = (() => { try { return JSON.parse(event.body || '{}'); } catch { return {}; } })();
+  const ignoreCap = body.ignoreCap === true;
+  if (ignoreCap) log.info('ignoreCap=true — daily delta check will be skipped');
+
   try {
     // 1. Current active count from Shopify
     const currentActive = await withRetry(() => getActiveCount(), 'getActiveCount');
@@ -33,14 +37,14 @@ exports.handler = async function () {
     const previousActive = await withRetry(() => getPreviousActiveCount(gToken), 'getPreviousActiveCount');
     log.info(`Previous active count (Config Sheet!E2): ${previousActive}`);
 
-    // 3. Enforce daily cap
+    // 3. Enforce daily cap (skipped when ignoreCap=true)
     const dailyDelta = currentActive - previousActive;
-    if (dailyDelta >= cfg.MAX_DAILY_ACTIVATE) {
+    if (!ignoreCap && dailyDelta >= cfg.MAX_DAILY_ACTIVATE) {
       log.info(`Daily cap reached (delta=${dailyDelta}, cap=${cfg.MAX_DAILY_ACTIVATE}) — exiting`);
       return { statusCode: 200, body: JSON.stringify({ status: 'cap_reached', dailyDelta }) };
     }
 
-    const remaining = cfg.MAX_DAILY_ACTIVATE - dailyDelta;
+    const remaining = ignoreCap ? cfg.MAX_DAILY_ACTIVATE : cfg.MAX_DAILY_ACTIVATE - dailyDelta;
     log.info(`Remaining activations allowed today: ${remaining}`);
 
     // 4. Get LISTED rows
@@ -88,7 +92,7 @@ exports.handler = async function () {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'ok', activated, newActiveCount }),
+      body: JSON.stringify({ status: 'ok', activated, newActiveCount, ignoreCap }),
     };
 
   } catch (err) {

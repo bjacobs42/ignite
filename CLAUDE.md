@@ -4,7 +4,9 @@
 
 Ignite is a scheduled Netlify function (Node.js, no npm dependencies) that runs daily at 18:00 Amsterdam time. It reads a queue of Shopify draft products from Google Sheets, activates up to `MAX_DAILY_ACTIVATE` of them on Shopify, and updates the sheet status from `LISTED` → `ACTIVE`. A daily activation cap is enforced by comparing the current Shopify active count against yesterday's count stored in `Config Sheet!E2`.
 
-The companion project `product_lister2` (at `../product_lister2`) creates the Shopify products as drafts and marks them `LISTED` in the sheet. Daybreak is the second step in that pipeline.
+The companion project `product_lister2` (at `../product_lister2`) creates the Shopify products as drafts and marks them `LISTED` in the sheet. Ignite is the second step in that pipeline.
+
+A web UI (`index.html`) is served on the same Netlify site for manual triggering — including an "Override Cap" mode that bypasses the daily delta check.
 
 ## Running locally
 
@@ -18,18 +20,28 @@ cp .env.example .env
 # Start local dev server
 netlify dev
 
+# Open the web UI
+open http://localhost:8888
+
 # Read-only diagnostic (no writes) — run this first
 curl http://localhost:8888/.netlify/functions/test-sync
 
-# Trigger a real production run locally
+# Trigger a normal run
 curl -X POST http://localhost:8888/.netlify/functions/sync-products
+
+# Trigger a run ignoring the daily cap
+curl -X POST http://localhost:8888/.netlify/functions/sync-products \
+  -H 'Content-Type: application/json' \
+  -d '{"ignoreCap": true}'
 ```
 
 ## Project structure
 
 ```
+index.html              Web UI — status dashboard + manual trigger buttons
+
 netlify/functions/
-  sync-products.js        Scheduled handler — full production run
+  sync-products.js        Scheduled handler — full production run; accepts ignoreCap via POST body
   test-sync.js            Read-only diagnostic — zero writes
 
 src/
@@ -61,7 +73,7 @@ Data rows start at **row 4** (rows 1–3 are headers/blank). All column indices 
 | G | G | `COL_STATUS = 6` | `COL_STATUS_1 = 7` | STATUS | Read + Write |
 | K | K | `COL_LINK = 10` | `COL_LINK_1 = 11` | SHOPIFY LINK | Read |
 
-STATUS values relevant to Daybreak:
+STATUS values relevant to Ignite:
 - `LISTED` — product exists on Shopify as a draft; ready to activate
 - `ACTIVE` — product has been activated by Daybreak
 
@@ -123,23 +135,26 @@ This converts the stored literal `\n` sequences back into real newlines for the 
 
 ```
 1. Validate env vars
-2. getActiveCount()                    → currentActive  (Shopify, paginated)
-3. getGoogleAccessToken()             → gToken          (RS256 JWT, 1h TTL)
-4. getPreviousActiveCount(gToken)     → previousActive  (Config Sheet!E2)
-5. dailyDelta = currentActive - previousActive
-   if dailyDelta >= MAX_DAILY_ACTIVATE → exit 200 "cap_reached"
-6. remaining = MAX_DAILY_ACTIVATE - dailyDelta
-7. getListedProducts(gToken)          → listedRows
+2. Parse POST body → ignoreCap (boolean, default false)
+3. getActiveCount()                    → currentActive  (Shopify, paginated)
+4. getGoogleAccessToken()             → gToken          (RS256 JWT, 1h TTL)
+5. getPreviousActiveCount(gToken)     → previousActive  (Config Sheet!E2)
+6. dailyDelta = currentActive - previousActive
+   if !ignoreCap && dailyDelta >= MAX_DAILY_ACTIVATE → exit 200 "cap_reached"
+7. remaining = ignoreCap ? MAX_DAILY_ACTIVATE : MAX_DAILY_ACTIVATE - dailyDelta
+8. getListedProducts(gToken)          → listedRows
    if listedRows.length === 0         → exit 200 "nothing_to_activate" (no writes)
-8. for row of listedRows.slice(0, remaining):
+9. for row of listedRows.slice(0, remaining):
      productId = extractProductId(row.productUrl)
      if !productId → log error, skip row
      activateProduct(productId)        (Shopify PUT, withRetry)
      markProductActive(gToken, rowNum) (Sheet col G → ACTIVE, withRetry)
-9. getActiveCount()                    → newActiveCount
-10. setPreviousActiveCount(gToken, newActiveCount)  (Config Sheet!E2)
-11. return 200 { activated, newActiveCount }
+10. getActiveCount()                    → newActiveCount
+11. setPreviousActiveCount(gToken, newActiveCount)  (Config Sheet!E2)
+12. return 200 { activated, newActiveCount, ignoreCap }
 ```
+
+`ignoreCap: true` is sent via POST body by the web UI's "Override Cap & Run" button. The scheduled cron never sets it — it always runs with the cap enforced.
 
 If `activateProduct` or `markProductActive` throws after retries, the row stays `LISTED` and will be retried on the next daily run. The Shopify PUT is idempotent — activating an already-active product returns 200 with no side effects.
 
@@ -286,6 +301,8 @@ Body: { range: "Store Sheet!G5", majorDimension: "ROWS", values: [["ACTIVE"]] }
 - **`getRows` returns a ragged array.** Rows shorter than column K will have `rows[i][10] === undefined`. All column accesses use `(rows[i][col] || '')` to guard against this.
 - **`withRetry` default is 2 attempts.** The first failure is retried once after 3s. Permanent errors (bad credentials, wrong sheet ID) will surface after the second attempt.
 - **Google token TTL is 1 hour.** A single run completes in well under 60s so no refresh is needed.
-- **D2 is off-limits.** `Config Sheet!D2` is used by `product_lister2` as a run lock. Daybreak uses `E2` exclusively.
+- **D2 is off-limits.** `Config Sheet!D2` is used by `product_lister2` as a run lock. Ignite uses `E2` exclusively.
 - **`activateProduct` is idempotent.** If the sheet update fails after a successful Shopify activation, the row stays `LISTED`. On next run it will be re-activated (Shopify returns 200 for an already-active product) and the sheet update retried.
 - **`test-sync` makes no writes.** It is always safe to call. Use it to verify sheet column layout and product URL formats on any new spreadsheet before the first live run.
+- **`ignoreCap` only skips the delta check.** It still respects `MAX_DAILY_ACTIVATE` as a per-run limit — it will never activate more than that number in a single run. The scheduled cron always runs without `ignoreCap`.
+- **`index.html` is served statically.** Netlify serves it from the publish root (`"."`). No extra config needed.

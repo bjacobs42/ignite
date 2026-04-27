@@ -1,6 +1,6 @@
 # Ignite
 
-A scheduled Netlify function that drip-releases Shopify draft products to active every day at 18:00 Amsterdam time. It reads a queue of products from Google Sheets, enforces a daily activation cap, activates each product on Shopify, and updates the sheet status — all automatically.
+A scheduled Netlify function that drip-releases Shopify draft products to active every day at 18:00 Amsterdam time. It reads a queue of products from Google Sheets, enforces a daily activation cap, activates each product on Shopify, and updates the sheet status — all automatically. A web UI is included for manual triggering and cap overrides.
 
 ---
 
@@ -35,7 +35,7 @@ Your spreadsheet needs two tabs:
 
 | Column | Field | Notes |
 |--------|-------|-------|
-| G | STATUS | Daybreak reads `LISTED`, writes `ACTIVE` |
+| G | STATUS | Ignite reads `LISTED`, writes `ACTIVE` |
 | K | SHOPIFY LINK | Shopify admin URL, e.g. `https://admin.shopify.com/store/{store}/products/{id}` |
 
 **Config Sheet** — state storage:
@@ -44,7 +44,7 @@ Your spreadsheet needs two tabs:
 |------|-------|-------|
 | E2 | Previous active count | **Set this to `0` manually before first deploy** |
 
-> Column D2 is intentionally left for other tools. Daybreak only reads/writes E2.
+> Column D2 is intentionally left for other tools. Ignite only reads/writes E2.
 
 **Service account access:**
 1. Create a service account in [Google Cloud Console](https://console.cloud.google.com).
@@ -86,9 +86,23 @@ The function runs daily at 16:00 UTC, which is **18:00 CEST** (summer) and **17:
 
 ---
 
+## Web UI
+
+Once deployed, open the site URL in a browser. The UI has three sections:
+
+- **Status** — live snapshot from `test-sync`: active count, daily delta, slots remaining, and queue size. Refreshes on demand.
+- **Actions** — two buttons:
+  - **Run Sync** — triggers a normal run respecting the daily cap.
+  - **Override Cap & Run** — triggers a run that skips the daily delta check and activates up to `MAX_DAILY_ACTIVATE` products regardless of today's count. Styled amber as a visual warning.
+- **Last Run** — shows the timestamp and JSON response of the most recent manual trigger. Green border on success, red on error.
+
+Both action buttons disable during any in-flight request and auto-refresh the Status card when the run completes.
+
+---
+
 ## Testing
 
-Daybreak includes a read-only test function that shows exactly what the next production run would do — no Shopify activations, no sheet writes.
+Ignite includes a read-only diagnostic function that shows exactly what the next scheduled run would do — no Shopify activations, no sheet writes.
 
 **With Netlify Dev (recommended):**
 
@@ -97,7 +111,7 @@ npm install -g netlify-cli
 netlify dev
 ```
 
-Then in another terminal:
+Then open `http://localhost:8888` in a browser, or call the function directly:
 
 ```bash
 curl http://localhost:8888/.netlify/functions/test-sync
@@ -129,8 +143,10 @@ Run `test-sync` first on every new deployment to verify the sheet columns and pr
 ## Project structure
 
 ```
+index.html            Web UI — manual trigger and status dashboard
+
 netlify/functions/
-  sync-products.js      Production handler — runs on schedule
+  sync-products.js      Production handler — runs on schedule and via UI
   test-sync.js          Read-only diagnostic endpoint
 
 src/

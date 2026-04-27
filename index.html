@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ignite</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #f5f5f0;
+      --surface: #ffffff;
+      --border:  #e5e5e0;
+      --text:    #1a1a18;
+      --muted:   #6b7280;
+      --accent:  #2d2d2a;
+      --green:   #166534;
+      --green-bg:#f0fdf4;
+      --red:     #8b2020;
+      --red-bg:  #fff5f5;
+      --amber:   #92400e;
+      --amber-bg:#fffbeb;
+      --r:       6px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 560px;
+      margin-bottom: 24px;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    header p {
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 560px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-header h2 {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+    }
+
+    .card-body { padding: 16px; }
+
+    /* Status rows */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: var(--muted); }
+    .stat-value { font-weight: 500; }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-green  { background: var(--green-bg);  color: var(--green); }
+    .badge-amber  { background: var(--amber-bg);  color: var(--amber); }
+    .badge-muted  { background: var(--bg);        color: var(--muted); border: 1px solid var(--border); }
+
+    /* Buttons */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 11px 16px;
+      border-radius: var(--r);
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn + .btn   { margin-top: 8px; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.85; }
+
+    .btn-amber {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid #fde68a;
+    }
+    .btn-amber:hover:not(:disabled) { opacity: 0.8; }
+
+    /* Refresh button (small, inline) */
+    .btn-ghost {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 10px;
+      border-radius: var(--r);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-ghost:hover:not(:disabled) { background: var(--bg); }
+    .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Last run card */
+    #card-result { display: none; }
+    #card-result.success { border-color: #86efac; }
+    #card-result.error   { border-color: #fca5a5; }
+
+    .result-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 12px;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Ignite</h1>
+    <p>Manual product activation controls</p>
+  </header>
+
+  <!-- Card 1: Status -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Status</h2>
+      <button class="btn-ghost" id="btn-refresh" onclick="loadStatus()">Refresh</button>
+    </div>
+    <div class="card-body" id="status-body">
+      <span class="loading-text">Loading…</span>
+    </div>
+  </div>
+
+  <!-- Card 2: Actions -->
+  <div class="card">
+    <div class="card-header"><h2>Actions</h2></div>
+    <div class="card-body">
+      <button class="btn btn-primary" id="btn-run" onclick="runSync(false)">
+        Run Sync
+      </button>
+      <button class="btn btn-amber" id="btn-override" onclick="runSync(true)">
+        Override Cap &amp; Run
+      </button>
+    </div>
+  </div>
+
+  <!-- Card 3: Last run -->
+  <div class="card" id="card-result">
+    <div class="card-header"><h2>Last Run</h2></div>
+    <div class="card-body">
+      <div class="result-meta" id="result-meta"></div>
+      <pre id="result-body"></pre>
+    </div>
+  </div>
+
+  <script>
+    // ── Render helpers ────────────────────────────────────────────────────────
+
+    function renderStatus(data) {
+      const capReached = data.capAlreadyReached;
+      const slotsBadge = capReached
+        ? `<span class="badge badge-amber">Cap reached</span>`
+        : `<span class="badge badge-green">${data.slotsRemaining} remaining</span>`;
+
+      document.getElementById('status-body').innerHTML = `
+        <div class="stat-row">
+          <span class="stat-label">Active on Shopify</span>
+          <span class="stat-value">${data.currentActive}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Previous count (E2)</span>
+          <span class="stat-value">${data.previousActive}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Activated today</span>
+          <span class="stat-value">${data.dailyDelta}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Daily slots</span>
+          <span class="stat-value">${slotsBadge}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">LISTED in queue</span>
+          <span class="stat-value">${data.listedRowsTotal}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Would activate now</span>
+          <span class="stat-value">${data.wouldActivateCount}</span>
+        </div>
+      `;
+    }
+
+    function renderResult(data, ok) {
+      const card = document.getElementById('card-result');
+      card.className = 'card ' + (ok ? 'success' : 'error');
+      card.style.display = 'block';
+      document.getElementById('result-meta').textContent =
+        new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+      document.getElementById('result-body').textContent =
+        JSON.stringify(data, null, 2);
+    }
+
+    // ── API calls ─────────────────────────────────────────────────────────────
+
+    async function loadStatus() {
+      const btn = document.getElementById('btn-refresh');
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const res  = await fetch('/.netlify/functions/test-sync');
+        const data = await res.json();
+        renderStatus(data);
+      } catch (err) {
+        document.getElementById('status-body').innerHTML =
+          `<span class="loading-text">Failed to load — ${err.message}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh';
+      }
+    }
+
+    async function runSync(ignoreCap) {
+      const btnRun      = document.getElementById('btn-run');
+      const btnOverride = document.getElementById('btn-override');
+      const activeBtn   = ignoreCap ? btnOverride : btnRun;
+
+      // Disable both buttons; show spinner on the active one
+      btnRun.disabled = btnOverride.disabled = true;
+      activeBtn.innerHTML = '<span class="spinner"></span> Running…';
+
+      try {
+        const res  = await fetch('/.netlify/functions/sync-products', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(ignoreCap ? { ignoreCap: true } : {}),
+        });
+        const data = await res.json();
+        renderResult(data, res.ok);
+        loadStatus();
+      } catch (err) {
+        renderResult({ error: err.message }, false);
+      } finally {
+        btnRun.disabled = btnOverride.disabled = false;
+        btnRun.textContent      = 'Run Sync';
+        btnOverride.textContent = 'Override Cap & Run';
+      }
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    loadStatus();
+  </script>
+</body>
+</html>

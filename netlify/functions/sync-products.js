@@ -23,6 +23,11 @@ exports.handler = async function (event) {
   }
 
   const body         = (() => { try { return JSON.parse(event.body || '{}'); } catch { return {}; } })();
+  const isScheduled  = body.next_run !== undefined;
+  if (cfg.TRIGGER_SECRET && !isScheduled && event.headers['x-trigger-secret'] !== cfg.TRIGGER_SECRET) {
+    return { statusCode: 401, body: 'Unauthorized' };
+  }
+
   const ignoreCap    = body.ignoreCap   === true;
   const activateAll  = body.activateAll === true;
   const customAmount = (typeof body.customAmount === 'number' && body.customAmount > 0)

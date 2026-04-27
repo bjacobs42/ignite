@@ -12,8 +12,12 @@ const { getActiveCount }         = require('../../src/shopify/getActiveCount');
 const { getPreviousActiveCount } = require('../../src/sheets/getConfig');
 const { getListedProducts }      = require('../../src/sheets/getListedProducts');
 
-exports.handler = async function () {
+exports.handler = async function (event) {
   log.info('test-sync: run started (read-only)');
+
+  if (cfg.TRIGGER_SECRET && event.headers['x-trigger-secret'] !== cfg.TRIGGER_SECRET) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+  }
 
   if (!cfg.SHOPIFY_STORE_URL || !cfg.SHOPIFY_ACCESS_TOKEN) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Missing Shopify env vars' }) };

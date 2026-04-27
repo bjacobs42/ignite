@@ -7,6 +7,7 @@ module.exports = {
   GOOGLE_PRIVATE_KEY:           (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   GOOGLE_SHEET_ID:              process.env.GOOGLE_SHEET_ID,
   MAX_DAILY_ACTIVATE:           parseInt(process.env.MAX_DAILY_ACTIVATE || '10', 10),
+  TRIGGER_SECRET:               process.env.TRIGGER_SECRET || '',
 
   STORE_SHEET_TAB:  'Store Sheet',
   CONFIG_SHEET_TAB: 'Config Sheet',

@@ -214,6 +214,18 @@
     <p>Manual product activation controls</p>
   </header>
 
+  <!-- Auth -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-header"><h2>Auth</h2></div>
+    <div class="card-body" style="display:flex;gap:8px;align-items:center">
+      <input type="password" id="secret-input" class="amount-input"
+             style="width:100%;text-align:left;flex:1"
+             placeholder="Trigger secret"
+             oninput="saveSecret(this.value)">
+      <span id="secret-status" style="font-size:12px;color:var(--muted);white-space:nowrap"></span>
+    </div>
+  </div>
+
   <!-- Card 1: Status -->
   <div class="card">
     <div class="card-header">
@@ -255,6 +267,23 @@
   </div>
 
   <script>
+    // ── Auth ──────────────────────────────────────────────────────────────────
+
+    function getSecret() { return sessionStorage.getItem('ignite_secret') || ''; }
+
+    function saveSecret(val) {
+      if (val) sessionStorage.setItem('ignite_secret', val);
+      else sessionStorage.removeItem('ignite_secret');
+    }
+
+    function initSecret() {
+      const s = getSecret();
+      if (s) {
+        document.getElementById('secret-input').value = s;
+        document.getElementById('secret-status').textContent = 'saved';
+      }
+    }
+
     // ── Render helpers ────────────────────────────────────────────────────────
 
     function renderStatus(data) {
@@ -321,7 +350,14 @@
       btn.disabled = true;
       btn.textContent = '…';
       try {
-        const res  = await fetch('/.netlify/functions/test-sync');
+        const res  = await fetch('/.netlify/functions/test-sync', {
+          headers: { 'x-trigger-secret': getSecret() },
+        });
+        if (res.status === 401) {
+          document.getElementById('status-body').innerHTML =
+            `<span class="loading-text">Unauthorized — enter your trigger secret above</span>`;
+          return;
+        }
         const data = await res.json();
         renderStatus(data);
       } catch (err) {
@@ -350,7 +386,7 @@
       try {
         const res  = await fetch('/.netlify/functions/sync-products', {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-trigger-secret': getSecret() },
           body:    JSON.stringify(options),
         });
         const data = await res.json();
@@ -367,6 +403,7 @@
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
+    initSecret();
     loadStatus();
   </script>
 </body>

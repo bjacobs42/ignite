@@ -148,6 +148,28 @@
     .btn-ghost:hover:not(:disabled) { background: var(--bg); }
     .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    /* Input + button row */
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .btn-row .btn { margin-top: 0; flex: 1; }
+
+    .amount-input {
+      width: 72px;
+      padding: 11px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      font-size: 14px;
+      color: var(--text);
+      background: var(--surface);
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .amount-input:focus  { outline: none; border-color: var(--muted); }
+    .amount-input:disabled { opacity: 0.5; }
+
     /* Last run card */
     #card-result { display: none; }
     #card-result.success { border-color: #86efac; }
@@ -207,12 +229,19 @@
   <div class="card">
     <div class="card-header"><h2>Actions</h2></div>
     <div class="card-body">
-      <button class="btn btn-primary" id="btn-run" onclick="runSync(false)">
+      <button class="btn btn-primary" id="btn-run" onclick="runSync({})">
         Run Sync
       </button>
-      <button class="btn btn-amber" id="btn-override" onclick="runSync(true)">
+      <button class="btn btn-amber" id="btn-override" onclick="runSync({ ignoreCap: true })">
         Override Cap &amp; Run
       </button>
+      <div class="btn-row">
+        <input type="number" id="custom-amount" class="amount-input" min="1" placeholder="All"
+               oninput="updateAllBtn()">
+        <button class="btn btn-amber" id="btn-all" onclick="runSyncCustom()">
+          Activate All
+        </button>
+      </div>
     </div>
   </div>
 
@@ -272,6 +301,19 @@
         JSON.stringify(data, null, 2);
     }
 
+    // ── UI helpers ────────────────────────────────────────────────────────────
+
+    function updateAllBtn() {
+      const val = parseInt(document.getElementById('custom-amount').value);
+      document.getElementById('btn-all').textContent =
+        val > 0 ? `Activate ${val}` : 'Activate All';
+    }
+
+    function runSyncCustom() {
+      const val = parseInt(document.getElementById('custom-amount').value);
+      runSync(val > 0 ? { customAmount: val } : { activateAll: true });
+    }
+
     // ── API calls ─────────────────────────────────────────────────────────────
 
     async function loadStatus() {
@@ -291,20 +333,25 @@
       }
     }
 
-    async function runSync(ignoreCap) {
+    // options: {} | { ignoreCap: true } | { activateAll: true } | { customAmount: N }
+    async function runSync(options = {}) {
       const btnRun      = document.getElementById('btn-run');
       const btnOverride = document.getElementById('btn-override');
-      const activeBtn   = ignoreCap ? btnOverride : btnRun;
+      const btnAll      = document.getElementById('btn-all');
+      const amountInput = document.getElementById('custom-amount');
 
-      // Disable both buttons; show spinner on the active one
-      btnRun.disabled = btnOverride.disabled = true;
+      const activeBtn = options.ignoreCap ? btnOverride
+        : (options.activateAll || options.customAmount) ? btnAll
+        : btnRun;
+
+      btnRun.disabled = btnOverride.disabled = btnAll.disabled = amountInput.disabled = true;
       activeBtn.innerHTML = '<span class="spinner"></span> Running…';
 
       try {
         const res  = await fetch('/.netlify/functions/sync-products', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(ignoreCap ? { ignoreCap: true } : {}),
+          body:    JSON.stringify(options),
         });
         const data = await res.json();
         renderResult(data, res.ok);
@@ -312,9 +359,10 @@
       } catch (err) {
         renderResult({ error: err.message }, false);
       } finally {
-        btnRun.disabled = btnOverride.disabled = false;
+        btnRun.disabled = btnOverride.disabled = btnAll.disabled = amountInput.disabled = false;
         btnRun.textContent      = 'Run Sync';
         btnOverride.textContent = 'Override Cap & Run';
+        updateAllBtn();
       }
     }
 

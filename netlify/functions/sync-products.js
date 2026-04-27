@@ -11,7 +11,7 @@ const { setPreviousActiveCount } = require('../../src/sheets/updateConfig');
 const { getListedProducts }      = require('../../src/sheets/getListedProducts');
 const { markProductActive }      = require('../../src/sheets/updateProductStatus');
 
-exports.handler = async function () {
+exports.handler = async function (event) {
   log.info('sync-products: run started');
 
   if (!cfg.SHOPIFY_STORE_URL || !cfg.SHOPIFY_ACCESS_TOKEN) {
@@ -23,9 +23,14 @@ exports.handler = async function () {
     return { statusCode: 500, body: 'config error: Google vars missing' };
   }
 
-  const body      = (() => { try { return JSON.parse(event.body || '{}'); } catch { return {}; } })();
-  const ignoreCap = body.ignoreCap === true;
-  if (ignoreCap) log.info('ignoreCap=true — daily delta check will be skipped');
+  const body         = (() => { try { return JSON.parse(event.body || '{}'); } catch { return {}; } })();
+  const ignoreCap    = body.ignoreCap   === true;
+  const activateAll  = body.activateAll === true;
+  const customAmount = (typeof body.customAmount === 'number' && body.customAmount > 0)
+    ? Math.floor(body.customAmount) : null;
+  if (ignoreCap)             log.info('ignoreCap=true — daily delta check skipped');
+  if (activateAll)           log.info('activateAll=true — all LISTED products will be processed');
+  if (customAmount !== null) log.info(`customAmount=${customAmount}`);
 
   try {
     // 1. Current active count from Shopify
@@ -37,14 +42,17 @@ exports.handler = async function () {
     const previousActive = await withRetry(() => getPreviousActiveCount(gToken), 'getPreviousActiveCount');
     log.info(`Previous active count (Config Sheet!E2): ${previousActive}`);
 
-    // 3. Enforce daily cap (skipped when ignoreCap=true)
-    const dailyDelta = currentActive - previousActive;
-    if (!ignoreCap && dailyDelta >= cfg.MAX_DAILY_ACTIVATE) {
+    // 3. Enforce daily cap (skipped for any override mode)
+    const dailyDelta   = currentActive - previousActive;
+    const overrideMode = ignoreCap || activateAll || customAmount !== null;
+    if (!overrideMode && dailyDelta >= cfg.MAX_DAILY_ACTIVATE) {
       log.info(`Daily cap reached (delta=${dailyDelta}, cap=${cfg.MAX_DAILY_ACTIVATE}) — exiting`);
       return { statusCode: 200, body: JSON.stringify({ status: 'cap_reached', dailyDelta }) };
     }
 
-    const remaining = ignoreCap ? cfg.MAX_DAILY_ACTIVATE : cfg.MAX_DAILY_ACTIVATE - dailyDelta;
+    const remaining = customAmount !== null   ? customAmount
+      : ignoreCap                             ? cfg.MAX_DAILY_ACTIVATE
+      : cfg.MAX_DAILY_ACTIVATE - dailyDelta;
     log.info(`Remaining activations allowed today: ${remaining}`);
 
     // 4. Get LISTED rows
@@ -57,7 +65,7 @@ exports.handler = async function () {
     }
 
     // 5. Activate up to `remaining` products
-    const toActivate = listedRows.slice(0, remaining);
+    const toActivate = activateAll ? listedRows : listedRows.slice(0, remaining);
     let activated    = 0;
 
     for (const row of toActivate) {
@@ -92,7 +100,7 @@ exports.handler = async function () {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'ok', activated, newActiveCount, ignoreCap }),
+      body: JSON.stringify({ status: 'ok', activated, newActiveCount, ignoreCap, activateAll, customAmount }),
     };
 
   } catch (err) {

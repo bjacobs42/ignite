@@ -1,8 +1,8 @@
-# CLAUDE.md — Daybreak
+# CLAUDE.md — Ignite
 
 ## Project goal
 
-Daybreak is a scheduled Netlify function (Node.js, no npm dependencies) that runs daily at 18:00 Amsterdam time. It reads a queue of Shopify draft products from Google Sheets, activates up to `MAX_DAILY_ACTIVATE` of them on Shopify, and updates the sheet status from `LISTED` → `ACTIVE`. A daily activation cap is enforced by comparing the current Shopify active count against yesterday's count stored in `Config Sheet!E2`.
+Ignite is a scheduled Netlify function (Node.js, no npm dependencies) that runs daily at 18:00 Amsterdam time. It reads a queue of Shopify draft products from Google Sheets, activates up to `MAX_DAILY_ACTIVATE` of them on Shopify, and updates the sheet status from `LISTED` → `ACTIVE`. A daily activation cap is enforced by comparing the current Shopify active count against yesterday's count stored in `Config Sheet!E2`.
 
 The companion project `product_lister2` (at `../product_lister2`) creates the Shopify products as drafts and marks them `LISTED` in the sheet. Daybreak is the second step in that pipeline.
 

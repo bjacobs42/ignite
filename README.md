@@ -1,4 +1,4 @@
-# Daybreak
+# Ignite
 
 A scheduled Netlify function that drip-releases Shopify draft products to active every day at 18:00 Amsterdam time. It reads a queue of products from Google Sheets, enforces a daily activation cap, activates each product on Shopify, and updates the sheet status — all automatically.
 
